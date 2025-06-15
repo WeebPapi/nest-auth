@@ -7,7 +7,10 @@ import { TokenPayload } from '../token-payload.interface';
 import { UsersService } from 'src/users/users.service';
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
+export class JwtRefreshStrategy extends PassportStrategy(
+  Strategy,
+  'jwt-refresh',
+) {
   constructor(
     configService: ConfigService,
     private readonly usersService: UsersService,
@@ -15,10 +18,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request: Request) => {
-          return request.cookies.access_token;
+          return request.cookies.refresh_token;
         },
       ]),
-      secretOrKey: configService.getOrThrow('JWT_ACCESS_TOKEN_SECRET'),
+      secretOrKey: configService.getOrThrow('JWT_REFRESH_TOKEN_SECRET'),
     });
   }
   async validate(payload: TokenPayload) {

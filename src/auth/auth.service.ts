@@ -14,19 +14,85 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async login(user: User, response: Response) {
-    const tokenExpiration = new Date();
-    tokenExpiration.setMilliseconds(tokenExpiration.getMilliseconds() + 900000);
+  generateTokens(user: User) {
+    //Expiration datetimes
+    const accessTokenExpiration = new Date();
+    accessTokenExpiration.setMilliseconds(
+      accessTokenExpiration.getMilliseconds() + 1000 * 60 * 15,
+    );
+
+    const refreshTokenExpiration = new Date();
+    refreshTokenExpiration.setMilliseconds(
+      refreshTokenExpiration.getMilliseconds() + 1000 * 60 * 60 * 24 * 7,
+    );
+
+    //User Id as the payload
     const tokenPayload: TokenPayload = { userId: user._id.toHexString() };
+
+    //Token Generation
     const accessToken = this.jwtService.sign(tokenPayload, {
       secret: this.configService.getOrThrow('JWT_ACCESS_TOKEN_SECRET'),
       expiresIn: '15m',
     });
+
+    const refreshToken = this.jwtService.sign(tokenPayload, {
+      secret: this.configService.getOrThrow('JWT_REFRESH_TOKEN_SECRET'),
+      expiresIn: '7d',
+    });
+
+    //Attaching the tokens to cookies
+    return {
+      accessToken,
+      accessTokenExpiration,
+      refreshToken,
+      refreshTokenExpiration,
+    };
+  }
+
+  async refresh(user: User, response: Response) {
+    const {
+      accessToken,
+      accessTokenExpiration,
+      refreshToken,
+      refreshTokenExpiration,
+    } = this.generateTokens(user);
+
+    //Attaching the tokens to cookies
     response.cookie('access_token', accessToken, {
       httpOnly: true,
       secure: this.configService.getOrThrow('NODE_ENV') === 'production',
-      expires: tokenExpiration,
+      expires: accessTokenExpiration,
     });
+    response.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: this.configService.getOrThrow('NODE_ENV') === 'production',
+      expires: refreshTokenExpiration,
+    });
+
+    return { message: 'Refresh successful' };
+  }
+
+  async login(user: User, response: Response) {
+    const {
+      accessToken,
+      accessTokenExpiration,
+      refreshToken,
+      refreshTokenExpiration,
+    } = this.generateTokens(user);
+
+    //Attaching the tokens to cookies
+    response.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: this.configService.getOrThrow('NODE_ENV') === 'production',
+      expires: accessTokenExpiration,
+    });
+    response.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: this.configService.getOrThrow('NODE_ENV') === 'production',
+      expires: refreshTokenExpiration,
+    });
+
+    return { message: 'Log-in successful', email: user.email, _id: user._id };
   }
 
   async verifyUser(email: string, password: string) {
