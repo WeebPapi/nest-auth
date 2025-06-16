@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
 import * as bcrypt from 'bcryptjs';
 import { ConfigService } from '@nestjs/config';
@@ -14,7 +18,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  generateTokens(user: User) {
+  async generateTokens(user: User) {
     //Expiration datetimes
     const accessTokenExpiration = new Date();
     accessTokenExpiration.setMilliseconds(
@@ -40,6 +44,11 @@ export class AuthService {
       expiresIn: '7d',
     });
 
+    await this.usersService.updateUser(
+      { _id: user._id },
+      { $set: { refresh_token: await bcrypt.hash(refreshToken, 10) } },
+    );
+
     //Attaching the tokens to cookies
     return {
       accessToken,
@@ -49,27 +58,17 @@ export class AuthService {
     };
   }
 
-  async refresh(user: User, response: Response) {
-    const {
-      accessToken,
-      accessTokenExpiration,
-      refreshToken,
-      refreshTokenExpiration,
-    } = this.generateTokens(user);
+  async verifyRefreshToken(refreshToken: string, userId: string) {
+    try {
+      const user = await this.usersService.getUser({ _id: userId });
+      const compare = await bcrypt.compare(refreshToken, user.refresh_token!);
+      if (!user || !compare)
+        throw new UnauthorizedException('Error refreshing tokens');
 
-    //Attaching the tokens to cookies
-    response.cookie('access_token', accessToken, {
-      httpOnly: true,
-      secure: this.configService.getOrThrow('NODE_ENV') === 'production',
-      expires: accessTokenExpiration,
-    });
-    response.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: this.configService.getOrThrow('NODE_ENV') === 'production',
-      expires: refreshTokenExpiration,
-    });
-
-    return { message: 'Refresh successful' };
+      return user;
+    } catch (error) {
+      throw new UnauthorizedException('Error refreshing tokens');
+    }
   }
 
   async login(user: User, response: Response) {
@@ -78,7 +77,7 @@ export class AuthService {
       accessTokenExpiration,
       refreshToken,
       refreshTokenExpiration,
-    } = this.generateTokens(user);
+    } = await this.generateTokens(user);
 
     //Attaching the tokens to cookies
     response.cookie('access_token', accessToken, {
